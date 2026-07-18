@@ -1,4 +1,3 @@
-&lt;div align="center"&gt;
 
 # ⚽ StadiumMind
 
