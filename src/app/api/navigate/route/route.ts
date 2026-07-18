@@ -55,11 +55,8 @@ export async function POST(request: Request): Promise<Response> {
     try {
       db = getAdminDb();
     } catch (initError: unknown) {
-      console.error("[navigate/route] Firebase Admin init failed:", (initError as Error).message);
-      return NextResponse.json(
-        { error: "Database service temporarily unavailable", code: "SERVICE_UNAVAILABLE" },
-        { status: 503 }
-      );
+      console.error("Firebase Admin init failed:", initError);
+      throw initError;
     }
 
     interface SimpleZone {
@@ -83,9 +80,8 @@ export async function POST(request: Request): Promise<Response> {
         });
       });
     } catch (queryError: unknown) {
-      console.error("[navigate/route] Firestore query failed:", (queryError as Error).message);
-      // Continue with empty zone data — Gemini can still generate a generic route
-      zonesData = [];
+      console.error("Firestore query failed:", queryError);
+      throw queryError;
     }
 
     // Gemini API call — wrapped in its own try/catch
@@ -124,22 +120,13 @@ export async function POST(request: Request): Promise<Response> {
         destinationName: parsedRoute.destinationName || cleanEnd,
       });
     } catch (geminiError: unknown) {
-      console.error("[navigate/route] Gemini API call failed:", (geminiError as Error).message);
-      // Fallback: return a generic route instead of crashing
-      return NextResponse.json({
-        steps: [
-          `Head towards ${cleanEnd} from ${cleanStart}.`,
-          "Follow the main concourse signs.",
-          "Arrive at destination.",
-        ],
-        estTime: "5–8 mins",
-        destinationName: cleanEnd,
-      });
+      console.error("Gemini API call failed:", geminiError);
+      throw geminiError;
     }
-  } catch (error: unknown) {
-    console.error("[navigate/route] Unhandled error:", (error as Error).message);
+  } catch (error: any) {
+    console.error("NAVIGATE_ROUTE_ERROR:", error);
     return NextResponse.json(
-      { error: (error as Error).message || "Internal Server Error", code: "SERVER_ERROR" },
+      { error: error?.message || String(error), stack: error?.stack },
       { status: 500 }
     );
   }

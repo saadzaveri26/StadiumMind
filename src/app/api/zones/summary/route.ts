@@ -31,26 +31,16 @@ export async function GET(request: Request): Promise<Response> {
     try {
       db = getAdminDb();
     } catch (initError: unknown) {
-      console.error("[zones/summary] Firebase Admin init failed:", (initError as Error).message);
-      return NextResponse.json({
-        averageOccupancy: 0,
-        warningCount: 0,
-        criticalCount: 0,
-        zoneCount: 0,
-      });
+      console.error("Firebase Admin init failed:", initError);
+      throw initError;
     }
 
     let snapshot: Awaited<ReturnType<FirebaseFirestore.CollectionReference["get"]>>;
     try {
       snapshot = await db.collection("zones").get();
     } catch (queryError: unknown) {
-      console.error("[zones/summary] Firestore query failed:", (queryError as Error).message);
-      return NextResponse.json({
-        averageOccupancy: 0,
-        warningCount: 0,
-        criticalCount: 0,
-        zoneCount: 0,
-      });
+      console.error("Firestore query failed:", queryError);
+      throw queryError;
     }
 
     if (snapshot.empty) {
@@ -88,10 +78,10 @@ export async function GET(request: Request): Promise<Response> {
       criticalCount,
       zoneCount,
     });
-  } catch (error: unknown) {
-    console.error("[zones/summary] Unhandled error:", (error as Error).message);
+  } catch (error: any) {
+    console.error("ZONES_SUMMARY_ERROR:", error);
     return NextResponse.json(
-      { error: (error as Error).message || "Internal Server Error", code: "SERVER_ERROR" },
+      { error: error?.message || String(error), stack: error?.stack },
       { status: 500 }
     );
   }
