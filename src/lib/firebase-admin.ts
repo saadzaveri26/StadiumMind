@@ -31,14 +31,17 @@ console.log("Firebase Admin credentials present:", hasCredentials);
 
 /**
  * Initializes the Firebase Admin SDK app if not already initialized.
+ * Throws a descriptive error if credentials are missing (caught by route handlers).
  * @returns The initialized App instance.
  */
 export function getFirebaseAdminApp(): App {
   const apps = getApps();
   if (apps.length === 0) {
     if (!hasCredentials) {
-      // In serverless environments, if credentials aren't passed, fallback to default credentials
-      return initializeApp();
+      throw new Error(
+        "Firebase Admin credentials missing. Set NEXT_PUBLIC_FIREBASE_PROJECT_ID, " +
+        "FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY in Vercel Environment Variables."
+      );
     }
 
     return initializeApp({
