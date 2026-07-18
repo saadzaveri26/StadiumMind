@@ -26,20 +26,37 @@ const SEED_ZONES: SeedZoneInput[] = [
  * Idempotent — returns 200 if zones are already present.
  * Enforces rate limiting (10 req/min).
  * @param request - Next.js Request object.
- * @returns NextResponse with seeded zones or an informational message.
+ * @returns NextResponse with seeded zones or an informational message — always JSON, never HTML.
  */
 export async function POST(request: Request): Promise<Response> {
-  const ip = getClientIp(request);
-  const limitRes = rateLimit(ip, 10, 60000);
-  if (!limitRes.success) {
-    return NextResponse.json(
-      { error: "Too many requests. Please try again later.", code: "RATE_LIMIT_EXCEEDED" },
-      { status: 429 }
-    );
-  }
+  // Diagnostic: log env var presence (never actual values)
+  console.error("[zones/seed] ENV CHECK:", {
+    FIREBASE_CLIENT_EMAIL: !!process.env.FIREBASE_CLIENT_EMAIL,
+    FIREBASE_PRIVATE_KEY: !!process.env.FIREBASE_PRIVATE_KEY,
+    FIREBASE_PROJECT_ID: !!process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  });
 
   try {
-    const db = getAdminDb();
+    const ip = getClientIp(request);
+    const limitRes = rateLimit(ip, 10, 60000);
+    if (!limitRes.success) {
+      return NextResponse.json(
+        { error: "Too many requests. Please try again later.", code: "RATE_LIMIT_EXCEEDED" },
+        { status: 429 }
+      );
+    }
+
+    let db: ReturnType<typeof getAdminDb>;
+    try {
+      db = getAdminDb();
+    } catch (initError: unknown) {
+      console.error("[zones/seed] Firebase Admin init failed:", (initError as Error).message);
+      return NextResponse.json(
+        { error: "Database service temporarily unavailable", code: "SERVICE_UNAVAILABLE" },
+        { status: 503 }
+      );
+    }
+
     const existing = await db.collection("zones").limit(1).get();
 
     if (!existing.empty) {
@@ -67,6 +84,7 @@ export async function POST(request: Request): Promise<Response> {
 
     return NextResponse.json({ zones: seededZones }, { status: 201 });
   } catch (error: unknown) {
+    console.error("[zones/seed] Unhandled error:", (error as Error).message);
     return NextResponse.json(
       { error: (error as Error).message || "Internal Server Error", code: "SERVER_ERROR" },
       { status: 500 }

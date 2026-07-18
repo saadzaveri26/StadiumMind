@@ -8,21 +8,28 @@ import { getZoneStatus } from "@/lib/zoneData";
  * Handles POST requests to update a zone's occupancy and status in Firestore.
  * Enforces sliding window rate limit and zod input validation.
  * @param request - Next.js Request object.
- * @returns NextResponse with updated status or error response.
+ * @returns NextResponse with updated status or error response — always JSON, never HTML.
  */
 export async function POST(request: Request): Promise<Response> {
-  const ip = getClientIp(request);
-  
-  // Rate limiting: 60 requests per minute
-  const limitRes = rateLimit(ip, 60, 60000);
-  if (!limitRes.success) {
-    return NextResponse.json(
-      { error: "Too many requests. Please try again later.", code: "RATE_LIMIT_EXCEEDED" },
-      { status: 429 }
-    );
-  }
+  // Diagnostic: log env var presence (never actual values)
+  console.error("[zones/update] ENV CHECK:", {
+    FIREBASE_CLIENT_EMAIL: !!process.env.FIREBASE_CLIENT_EMAIL,
+    FIREBASE_PRIVATE_KEY: !!process.env.FIREBASE_PRIVATE_KEY,
+    FIREBASE_PROJECT_ID: !!process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  });
 
   try {
+    const ip = getClientIp(request);
+
+    // Rate limiting: 60 requests per minute
+    const limitRes = rateLimit(ip, 60, 60000);
+    if (!limitRes.success) {
+      return NextResponse.json(
+        { error: "Too many requests. Please try again later.", code: "RATE_LIMIT_EXCEEDED" },
+        { status: 429 }
+      );
+    }
+
     const body = await request.json();
     const parsed = zoneUpdateSchema.safeParse(body);
     if (!parsed.success) {
@@ -33,7 +40,17 @@ export async function POST(request: Request): Promise<Response> {
     }
 
     const { zoneId, occupancyPercent } = parsed.data;
-    const db = getAdminDb();
+
+    let db: ReturnType<typeof getAdminDb>;
+    try {
+      db = getAdminDb();
+    } catch (initError: unknown) {
+      console.error("[zones/update] Firebase Admin init failed:", (initError as Error).message);
+      return NextResponse.json(
+        { error: "Database service temporarily unavailable", code: "SERVICE_UNAVAILABLE" },
+        { status: 503 }
+      );
+    }
 
     // Query zone details to check existence and update
     const zoneRef = db.collection("zones").doc(zoneId);
@@ -60,6 +77,7 @@ export async function POST(request: Request): Promise<Response> {
 
     return NextResponse.json({ success: true, zoneId, occupancyPercent, status });
   } catch (error: unknown) {
+    console.error("[zones/update] Unhandled error:", (error as Error).message);
     return NextResponse.json(
       { error: (error as Error).message || "Internal Server Error", code: "SERVER_ERROR" },
       { status: 500 }

@@ -9,47 +9,66 @@ import { QueryDocumentSnapshot } from "firebase-admin/firestore";
  * Verifies the caller's Firebase ID token and custom 'staff' claim.
  * Enforces rate limiting.
  * @param request - Next.js Request object.
- * @returns NextResponse containing list of alerts or unauthorized error.
+ * @returns NextResponse containing list of alerts or unauthorized error — always JSON, never HTML.
  */
 export async function POST(request: Request): Promise<Response> {
-  const ip = getClientIp(request);
-  const limitRes = rateLimit(ip, 60, 60000);
-  if (!limitRes.success) {
-    return NextResponse.json(
-      { error: "Too many requests. Please try again later.", code: "RATE_LIMIT_EXCEEDED" },
-      { status: 429 }
-    );
-  }
+  // Diagnostic: log env var presence (never actual values)
+  console.error("[ops/alerts/generate] ENV CHECK:", {
+    GEMINI_API_KEY: !!process.env.GEMINI_API_KEY,
+    FIREBASE_CLIENT_EMAIL: !!process.env.FIREBASE_CLIENT_EMAIL,
+    FIREBASE_PRIVATE_KEY: !!process.env.FIREBASE_PRIVATE_KEY,
+    FIREBASE_PROJECT_ID: !!process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  });
 
-  // Token Verification
-  const authHeader = request.headers.get("authorization");
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return NextResponse.json(
-      { error: "Missing or invalid auth token", code: "UNAUTHORIZED" },
-      { status: 401 }
-    );
-  }
-
-  const token = authHeader.split("Bearer ")[1];
   try {
-    const authAdmin = getAdminAuth();
-    const decodedToken = await authAdmin.verifyIdToken(token!);
-    
-    // Verify staff claim
-    if (!decodedToken.staff) {
+    const ip = getClientIp(request);
+    const limitRes = rateLimit(ip, 60, 60000);
+    if (!limitRes.success) {
       return NextResponse.json(
-        { error: "Forbidden: Staff credentials required", code: "FORBIDDEN" },
-        { status: 403 }
+        { error: "Too many requests. Please try again later.", code: "RATE_LIMIT_EXCEEDED" },
+        { status: 429 }
       );
     }
-  } catch (err) {
-    return NextResponse.json(
-      { error: "Invalid credentials", code: "UNAUTHORIZED" },
-      { status: 401 }
-    );
-  }
 
-  try {
+    // Token Verification
+    const authHeader = request.headers.get("authorization");
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return NextResponse.json(
+        { error: "Missing or invalid auth token", code: "UNAUTHORIZED" },
+        { status: 401 }
+      );
+    }
+
+    const token = authHeader.split("Bearer ")[1];
+
+    let authAdmin: ReturnType<typeof getAdminAuth>;
+    try {
+      authAdmin = getAdminAuth();
+    } catch (initError: unknown) {
+      console.error("[ops/alerts/generate] Firebase Admin init failed:", (initError as Error).message);
+      return NextResponse.json(
+        { error: "Authentication service temporarily unavailable", code: "SERVICE_UNAVAILABLE" },
+        { status: 503 }
+      );
+    }
+
+    try {
+      const decodedToken = await authAdmin.verifyIdToken(token!);
+
+      // Verify staff claim
+      if (!decodedToken.staff) {
+        return NextResponse.json(
+          { error: "Forbidden: Staff credentials required", code: "FORBIDDEN" },
+          { status: 403 }
+        );
+      }
+    } catch {
+      return NextResponse.json(
+        { error: "Invalid credentials", code: "UNAUTHORIZED" },
+        { status: 401 }
+      );
+    }
+
     if (!process.env.GEMINI_API_KEY) {
       return NextResponse.json(
         { error: "AI service temporarily unavailable", code: "SERVICE_UNAVAILABLE" },
@@ -57,8 +76,17 @@ export async function POST(request: Request): Promise<Response> {
       );
     }
 
-    const db = getAdminDb();
-    
+    let db: ReturnType<typeof getAdminDb>;
+    try {
+      db = getAdminDb();
+    } catch (initError: unknown) {
+      console.error("[ops/alerts/generate] Firebase Admin DB init failed:", (initError as Error).message);
+      return NextResponse.json(
+        { error: "Database service temporarily unavailable", code: "SERVICE_UNAVAILABLE" },
+        { status: 503 }
+      );
+    }
+
     const zonesSnap = await db.collection("zones").get();
     interface SimpleZone {
       zoneId: string;
@@ -85,7 +113,7 @@ export async function POST(request: Request): Promise<Response> {
       .orderBy("reportedAt", "desc")
       .limit(20)
       .get();
-      
+
     interface SimpleIncident {
       id: string;
       zoneId: string;
@@ -107,8 +135,10 @@ export async function POST(request: Request): Promise<Response> {
       });
     });
 
-    const model = getGeminiModel();
-    const prompt = `You are a professional tournament venue intelligence operator.
+    // Gemini call — wrapped in its own try/catch
+    try {
+      const model = getGeminiModel();
+      const prompt = `You are a professional tournament venue intelligence operator.
     Analyze the current stadium zones and incidents to identify potential problems (crowd density spikes, hazards, maintenance needs, security events).
     
     Zones data:
@@ -127,35 +157,49 @@ export async function POST(request: Request): Promise<Response> {
       }
     ]`;
 
-    const result = await model.generateContent(prompt);
-    const text = result.response.text();
+      const result = await model.generateContent(prompt);
+      const text = result.response.text();
 
-    interface GeneratedAlert {
-      severity: "HIGH" | "MEDIUM" | "LOW";
-      title: string;
-      message: string;
-      zoneId?: string;
-    }
-    let alerts: GeneratedAlert[] = [];
-    try {
-      const match = text.match(/\[[\s\S]*\]/);
-      if (match) {
-        alerts = JSON.parse(match[0]);
+      interface GeneratedAlert {
+        severity: "HIGH" | "MEDIUM" | "LOW";
+        title: string;
+        message: string;
+        zoneId?: string;
       }
-    } catch {
-      // Fallback alerts if Gemini returns malformed output
-      alerts = [
-        {
-          severity: "MEDIUM",
-          title: "System Synchronization",
-          message: "Unable to process AI-driven threat logs. Check system integration.",
-          zoneId: "Z-ALL",
-        },
-      ];
-    }
+      let alerts: GeneratedAlert[] = [];
+      try {
+        const match = text.match(/\[[\s\S]*\]/);
+        if (match) {
+          alerts = JSON.parse(match[0]);
+        }
+      } catch {
+        // Fallback alerts if Gemini returns malformed output
+        alerts = [
+          {
+            severity: "MEDIUM",
+            title: "System Synchronization",
+            message: "Unable to process AI-driven threat logs. Check system integration.",
+            zoneId: "Z-ALL",
+          },
+        ];
+      }
 
-    return NextResponse.json({ alerts });
+      return NextResponse.json({ alerts });
+    } catch (geminiError: unknown) {
+      console.error("[ops/alerts/generate] Gemini API call failed:", (geminiError as Error).message);
+      return NextResponse.json({
+        alerts: [
+          {
+            severity: "MEDIUM",
+            title: "AI Analysis Unavailable",
+            message: "The AI threat analysis engine is temporarily offline. Manual monitoring recommended.",
+            zoneId: "Z-ALL",
+          },
+        ],
+      });
+    }
   } catch (error: unknown) {
+    console.error("[ops/alerts/generate] Unhandled error:", (error as Error).message);
     return NextResponse.json(
       { error: (error as Error).message || "Internal Server Error", code: "SERVER_ERROR" },
       { status: 500 }

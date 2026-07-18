@@ -56,13 +56,15 @@ export function VoiceInputButton({
   const recognitionRef = React.useRef<ISpeechRecognition | null>(null);
 
   React.useEffect(() => {
-    // Check compatibility on mount
-    const SpeechRecognition =
-      (window as unknown as { SpeechRecognition?: new () => ISpeechRecognition }).SpeechRecognition ||
-      (window as unknown as { webkitSpeechRecognition?: new () => ISpeechRecognition }).webkitSpeechRecognition;
+    // Prefer standard SpeechRecognition (Chrome 110+), fallback to webkit-prefixed for older browsers
+    const SpeechRecognitionCtor =
+      (typeof window !== "undefined" &&
+        ((window as unknown as { SpeechRecognition?: new () => ISpeechRecognition }).SpeechRecognition ??
+         (window as unknown as { webkitSpeechRecognition?: new () => ISpeechRecognition }).webkitSpeechRecognition)) ||
+      null;
 
-    if (SpeechRecognition) {
-      const recognition = new SpeechRecognition();
+    if (SpeechRecognitionCtor) {
+      const recognition = new SpeechRecognitionCtor();
       recognition.continuous = false;
       recognition.interimResults = false;
 

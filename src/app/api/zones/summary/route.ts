@@ -5,26 +5,46 @@ import { QueryDocumentSnapshot } from "firebase-admin/firestore";
 
 /**
  * Handles GET requests to retrieve aggregated stadium parameters (average occupancy, active incident counts).
- * Enforces rate limiting. Returns zero-value summary if zones collection is empty.
+ * Enforces rate limiting. Returns zero-value summary if zones collection is empty or credentials are missing.
  * @param request - Next.js Request object.
- * @returns NextResponse with aggregated data.
+ * @returns NextResponse with aggregated data — always JSON, never HTML.
  */
 export async function GET(request: Request): Promise<Response> {
-  const ip = getClientIp(request);
-  const limitRes = rateLimit(ip, 60, 60000);
-  if (!limitRes.success) {
-    return NextResponse.json(
-      { error: "Too many requests. Please try again later.", code: "RATE_LIMIT_EXCEEDED" },
-      { status: 429 }
-    );
-  }
+  // Diagnostic: log env var presence (never actual values)
+  console.error("[zones/summary] ENV CHECK:", {
+    FIREBASE_CLIENT_EMAIL: !!process.env.FIREBASE_CLIENT_EMAIL,
+    FIREBASE_PRIVATE_KEY: !!process.env.FIREBASE_PRIVATE_KEY,
+    FIREBASE_PROJECT_ID: !!process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  });
 
   try {
-    const db = getAdminDb();
+    const ip = getClientIp(request);
+    const limitRes = rateLimit(ip, 60, 60000);
+    if (!limitRes.success) {
+      return NextResponse.json(
+        { error: "Too many requests. Please try again later.", code: "RATE_LIMIT_EXCEEDED" },
+        { status: 429 }
+      );
+    }
+
+    let db: ReturnType<typeof getAdminDb>;
+    try {
+      db = getAdminDb();
+    } catch (initError: unknown) {
+      console.error("[zones/summary] Firebase Admin init failed:", (initError as Error).message);
+      return NextResponse.json({
+        averageOccupancy: 0,
+        warningCount: 0,
+        criticalCount: 0,
+        zoneCount: 0,
+      });
+    }
+
     let snapshot: Awaited<ReturnType<FirebaseFirestore.CollectionReference["get"]>>;
     try {
       snapshot = await db.collection("zones").get();
-    } catch {
+    } catch (queryError: unknown) {
+      console.error("[zones/summary] Firestore query failed:", (queryError as Error).message);
       return NextResponse.json({
         averageOccupancy: 0,
         warningCount: 0,
@@ -69,6 +89,7 @@ export async function GET(request: Request): Promise<Response> {
       zoneCount,
     });
   } catch (error: unknown) {
+    console.error("[zones/summary] Unhandled error:", (error as Error).message);
     return NextResponse.json(
       { error: (error as Error).message || "Internal Server Error", code: "SERVER_ERROR" },
       { status: 500 }

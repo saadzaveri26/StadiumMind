@@ -8,45 +8,63 @@ import { getAdminAuth, getAdminDb } from "@/lib/firebase-admin";
  * Verifies caller has a Firebase ID token and custom 'staff' claim.
  * Enforces rate limiting and input validation.
  * @param request - Next.js Request object.
- * @returns NextResponse with the created incident logs or error.
+ * @returns NextResponse with the created incident logs or error — always JSON, never HTML.
  */
 export async function POST(request: Request): Promise<Response> {
-  const ip = getClientIp(request);
-  const limitRes = rateLimit(ip, 60, 60000);
-  if (!limitRes.success) {
-    return NextResponse.json(
-      { error: "Too many requests. Please try again later.", code: "RATE_LIMIT_EXCEEDED" },
-      { status: 429 }
-    );
-  }
+  // Diagnostic: log env var presence (never actual values)
+  console.error("[incidents/log] ENV CHECK:", {
+    FIREBASE_CLIENT_EMAIL: !!process.env.FIREBASE_CLIENT_EMAIL,
+    FIREBASE_PRIVATE_KEY: !!process.env.FIREBASE_PRIVATE_KEY,
+    FIREBASE_PROJECT_ID: !!process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  });
 
-  // Token Verification
-  const authHeader = request.headers.get("authorization");
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return NextResponse.json(
-      { error: "Missing or invalid auth token", code: "UNAUTHORIZED" },
-      { status: 401 }
-    );
-  }
-
-  const token = authHeader.split("Bearer ")[1];
   try {
-    const authAdmin = getAdminAuth();
-    const decodedToken = await authAdmin.verifyIdToken(token!);
-    if (!decodedToken.staff) {
+    const ip = getClientIp(request);
+    const limitRes = rateLimit(ip, 60, 60000);
+    if (!limitRes.success) {
       return NextResponse.json(
-        { error: "Forbidden: Staff credentials required", code: "FORBIDDEN" },
-        { status: 403 }
+        { error: "Too many requests. Please try again later.", code: "RATE_LIMIT_EXCEEDED" },
+        { status: 429 }
       );
     }
-  } catch (err) {
-    return NextResponse.json(
-      { error: "Invalid credentials", code: "UNAUTHORIZED" },
-      { status: 401 }
-    );
-  }
 
-  try {
+    // Token Verification
+    const authHeader = request.headers.get("authorization");
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return NextResponse.json(
+        { error: "Missing or invalid auth token", code: "UNAUTHORIZED" },
+        { status: 401 }
+      );
+    }
+
+    const token = authHeader.split("Bearer ")[1];
+
+    let authAdmin: ReturnType<typeof getAdminAuth>;
+    try {
+      authAdmin = getAdminAuth();
+    } catch (initError: unknown) {
+      console.error("[incidents/log] Firebase Admin init failed:", (initError as Error).message);
+      return NextResponse.json(
+        { error: "Authentication service temporarily unavailable", code: "SERVICE_UNAVAILABLE" },
+        { status: 503 }
+      );
+    }
+
+    try {
+      const decodedToken = await authAdmin.verifyIdToken(token!);
+      if (!decodedToken.staff) {
+        return NextResponse.json(
+          { error: "Forbidden: Staff credentials required", code: "FORBIDDEN" },
+          { status: 403 }
+        );
+      }
+    } catch {
+      return NextResponse.json(
+        { error: "Invalid credentials", code: "UNAUTHORIZED" },
+        { status: 401 }
+      );
+    }
+
     const body = await request.json();
     const parsed = incidentLogSchema.safeParse(body);
     if (!parsed.success) {
@@ -62,8 +80,17 @@ export async function POST(request: Request): Promise<Response> {
     const cleanZone = sanitizeTextInput(zoneId, 50);
     const cleanDesc = sanitizeTextInput(description, 2000);
 
-    const db = getAdminDb();
-    
+    let db: ReturnType<typeof getAdminDb>;
+    try {
+      db = getAdminDb();
+    } catch (initError: unknown) {
+      console.error("[incidents/log] Firebase Admin DB init failed:", (initError as Error).message);
+      return NextResponse.json(
+        { error: "Database service temporarily unavailable", code: "SERVICE_UNAVAILABLE" },
+        { status: 503 }
+      );
+    }
+
     // Check if zone exists in zones collection
     const zoneDoc = await db.collection("zones").doc(cleanZone).get();
     if (!zoneDoc.exists) {
@@ -94,6 +121,7 @@ export async function POST(request: Request): Promise<Response> {
       reportedAt,
     });
   } catch (error: unknown) {
+    console.error("[incidents/log] Unhandled error:", (error as Error).message);
     return NextResponse.json(
       { error: (error as Error).message || "Internal Server Error", code: "SERVER_ERROR" },
       { status: 500 }

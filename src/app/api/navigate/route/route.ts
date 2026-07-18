@@ -9,19 +9,27 @@ import { QueryDocumentSnapshot } from "firebase-admin/firestore";
  * Handles POST requests to generate a low-congestion navigation route using Gemini 2.5 Flash.
  * Enforces rate limiting and input validation.
  * @param request - Next.js Request object.
- * @returns NextResponse containing recommended route steps.
+ * @returns NextResponse containing recommended route steps — always JSON, never HTML.
  */
 export async function POST(request: Request): Promise<Response> {
-  const ip = getClientIp(request);
-  const limitRes = rateLimit(ip, 60, 60000);
-  if (!limitRes.success) {
-    return NextResponse.json(
-      { error: "Too many requests. Please try again later.", code: "RATE_LIMIT_EXCEEDED" },
-      { status: 429 }
-    );
-  }
+  // Diagnostic: log env var presence (never actual values)
+  console.error("[navigate/route] ENV CHECK:", {
+    GEMINI_API_KEY: !!process.env.GEMINI_API_KEY,
+    FIREBASE_CLIENT_EMAIL: !!process.env.FIREBASE_CLIENT_EMAIL,
+    FIREBASE_PRIVATE_KEY: !!process.env.FIREBASE_PRIVATE_KEY,
+    FIREBASE_PROJECT_ID: !!process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  });
 
   try {
+    const ip = getClientIp(request);
+    const limitRes = rateLimit(ip, 60, 60000);
+    if (!limitRes.success) {
+      return NextResponse.json(
+        { error: "Too many requests. Please try again later.", code: "RATE_LIMIT_EXCEEDED" },
+        { status: 429 }
+      );
+    }
+
     if (!process.env.GEMINI_API_KEY) {
       return NextResponse.json(
         { error: "AI service temporarily unavailable", code: "SERVICE_UNAVAILABLE" },
@@ -39,13 +47,21 @@ export async function POST(request: Request): Promise<Response> {
     }
 
     const { startZoneId, endZoneId } = parsed.data;
-
-    // Sanitize values
     const cleanStart = sanitizeTextInput(startZoneId, 50);
     const cleanEnd = sanitizeTextInput(endZoneId, 50);
 
-    const db = getAdminDb();
-    const zonesSnap = await db.collection("zones").get();
+    // Firestore query — wrapped in its own try/catch
+    let db: ReturnType<typeof getAdminDb>;
+    try {
+      db = getAdminDb();
+    } catch (initError: unknown) {
+      console.error("[navigate/route] Firebase Admin init failed:", (initError as Error).message);
+      return NextResponse.json(
+        { error: "Database service temporarily unavailable", code: "SERVICE_UNAVAILABLE" },
+        { status: 503 }
+      );
+    }
+
     interface SimpleZone {
       zoneId: string;
       name: string;
@@ -53,20 +69,29 @@ export async function POST(request: Request): Promise<Response> {
       occupancyPercent: number;
       status: string;
     }
-    const zonesData: SimpleZone[] = [];
-    zonesSnap.forEach((doc: QueryDocumentSnapshot) => {
-      const data = doc.data();
-      zonesData.push({
-        zoneId: doc.id,
-        name: data.name || "",
-        gate: data.gate || "",
-        occupancyPercent: data.occupancyPercent || 0,
-        status: data.status || "NOMINAL",
+    let zonesData: SimpleZone[] = [];
+    try {
+      const zonesSnap = await db.collection("zones").get();
+      zonesSnap.forEach((doc: QueryDocumentSnapshot) => {
+        const data = doc.data();
+        zonesData.push({
+          zoneId: doc.id,
+          name: data.name || "",
+          gate: data.gate || "",
+          occupancyPercent: data.occupancyPercent || 0,
+          status: data.status || "NOMINAL",
+        });
       });
-    });
+    } catch (queryError: unknown) {
+      console.error("[navigate/route] Firestore query failed:", (queryError as Error).message);
+      // Continue with empty zone data — Gemini can still generate a generic route
+      zonesData = [];
+    }
 
-    const model = getGeminiModel();
-    const prompt = `Based on the following real-time zone occupancy levels in the stadium, suggest a step-by-step route from ${cleanStart} to ${cleanEnd} that avoids congested areas (status CRITICAL/WARNING, occupancy > 60%).
+    // Gemini API call — wrapped in its own try/catch
+    try {
+      const model = getGeminiModel();
+      const prompt = `Based on the following real-time zone occupancy levels in the stadium, suggest a step-by-step route from ${cleanStart} to ${cleanEnd} that avoids congested areas (status CRITICAL/WARNING, occupancy > 60%).
     
     Zones data:
     ${JSON.stringify(zonesData)}
@@ -78,23 +103,41 @@ export async function POST(request: Request): Promise<Response> {
       "destinationName": "Destination Zone Name"
     }`;
 
-    const result = await model.generateContent(prompt);
-    const responseText = result.response.text();
+      const result = await model.generateContent(prompt);
+      const responseText = result.response.text();
 
-    // Parse the JSON block from text
-    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error("Invalid response format from Gemini");
+      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        console.error("[navigate/route] Gemini returned non-JSON response");
+        return NextResponse.json({
+          steps: [`Proceed from ${cleanStart} to ${cleanEnd} via the main concourse.`],
+          estTime: "5 mins",
+          destinationName: cleanEnd,
+        });
+      }
+
+      const parsedRoute = JSON.parse(jsonMatch[0]);
+
+      return NextResponse.json({
+        steps: parsedRoute.steps || [`Proceed from ${cleanStart} to ${cleanEnd} via the main concourse.`],
+        estTime: parsedRoute.estTime || "5 mins",
+        destinationName: parsedRoute.destinationName || cleanEnd,
+      });
+    } catch (geminiError: unknown) {
+      console.error("[navigate/route] Gemini API call failed:", (geminiError as Error).message);
+      // Fallback: return a generic route instead of crashing
+      return NextResponse.json({
+        steps: [
+          `Head towards ${cleanEnd} from ${cleanStart}.`,
+          "Follow the main concourse signs.",
+          "Arrive at destination.",
+        ],
+        estTime: "5–8 mins",
+        destinationName: cleanEnd,
+      });
     }
-
-    const parsedRoute = JSON.parse(jsonMatch[0]);
-
-    return NextResponse.json({
-      steps: parsedRoute.steps || ["Proceed towards destination wing through main concourse."],
-      estTime: parsedRoute.estTime || "5m",
-      destinationName: parsedRoute.destinationName || cleanEnd,
-    });
   } catch (error: unknown) {
+    console.error("[navigate/route] Unhandled error:", (error as Error).message);
     return NextResponse.json(
       { error: (error as Error).message || "Internal Server Error", code: "SERVER_ERROR" },
       { status: 500 }
