@@ -1,0 +1,36 @@
+steps:
+  # Step 1: Build the multi-stage Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'asia-south1-docker.pkg.dev/$PROJECT_ID/stadiummind/stadiummind:latest'
+      - '.'
+
+  # Step 2: Push the image to GCP Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'asia-south1-docker.pkg.dev/$PROJECT_ID/stadiummind/stadiummind:latest'
+
+  # Step 3: Deploy the image to Cloud Run in asia-south1
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - 'stadiummind'
+      - '--image'
+      - 'asia-south1-docker.pkg.dev/$PROJECT_ID/stadiummind/stadiummind:latest'
+      - '--region'
+      - 'asia-south1'
+      - '--platform'
+      - 'managed'
+      - '--port'
+      - '3080'
+      - '--allow-unauthenticated'
+      # Bind production secrets securely from Secret Manager
+      - '--update-secrets=FIREBASE_PRIVATE_KEY=FIREBASE_PRIVATE_KEY:latest,FIREBASE_CLIENT_EMAIL=FIREBASE_CLIENT_EMAIL:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest'
+
+images:
+  - 'asia-south1-docker.pkg.dev/$PROJECT_ID/stadiummind/stadiummind:latest'
