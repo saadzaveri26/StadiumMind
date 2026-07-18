@@ -9,6 +9,11 @@ interface LanguageContextProps {
 
 const LanguageContext = createContext<LanguageContextProps | undefined>(undefined);
 
+/**
+ * Provider component that maintains selected locale, persistence in localStorage, and translations context.
+ * @param props - Element containing React children nodes.
+ * @returns The context provider wrapper element.
+ */
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
   const [language, setLanguageState] = useState<string>("en");
 
@@ -31,6 +36,11 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
+/**
+ * Custom React hook to consume the active Language preference and change setter.
+ * Throws an error if consumed outside of a LanguageProvider tree.
+ * @returns The language context values.
+ */
 export function useLanguage() {
   const context = useContext(LanguageContext);
   if (!context) {

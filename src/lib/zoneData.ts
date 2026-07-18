@@ -6,7 +6,7 @@ export interface Zone {
   gate: string;
   occupancyPercent: number;
   capacity: number;
-  status: string;
+  status: ZoneStatus;
 }
 
 export const ZONE_STATUS = {

@@ -29,13 +29,6 @@ const SEED_ZONES: SeedZoneInput[] = [
  * @returns NextResponse with seeded zones or an informational message — always JSON, never HTML.
  */
 export async function POST(request: Request): Promise<Response> {
-  // Diagnostic: log env var presence (never actual values)
-  console.error("[zones/seed] ENV CHECK:", {
-    FIREBASE_CLIENT_EMAIL: !!process.env.FIREBASE_CLIENT_EMAIL,
-    FIREBASE_PRIVATE_KEY: !!process.env.FIREBASE_PRIVATE_KEY,
-    FIREBASE_PROJECT_ID: !!process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  });
-
   try {
     const ip = getClientIp(request);
     const limitRes = rateLimit(ip, 10, 60000);
@@ -84,9 +77,9 @@ export async function POST(request: Request): Promise<Response> {
 
     return NextResponse.json({ zones: seededZones }, { status: 201 });
   } catch (error: unknown) {
-    console.error("[zones/seed] Unhandled error:", (error as Error).message);
+    console.error("[zones/seed] Unhandled error:", error);
     return NextResponse.json(
-      { error: (error as Error).message || "Internal Server Error", code: "SERVER_ERROR" },
+      { error: "Internal server error", code: "SERVER_ERROR" },
       { status: 500 }
     );
   }

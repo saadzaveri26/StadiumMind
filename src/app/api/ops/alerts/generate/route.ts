@@ -12,14 +12,6 @@ import { QueryDocumentSnapshot } from "firebase-admin/firestore";
  * @returns NextResponse containing list of alerts or unauthorized error — always JSON, never HTML.
  */
 export async function POST(request: Request): Promise<Response> {
-  // Diagnostic: log env var presence (never actual values)
-  console.error("[ops/alerts/generate] ENV CHECK:", {
-    GEMINI_API_KEY: !!process.env.GEMINI_API_KEY,
-    FIREBASE_CLIENT_EMAIL: !!process.env.FIREBASE_CLIENT_EMAIL,
-    FIREBASE_PRIVATE_KEY: !!process.env.FIREBASE_PRIVATE_KEY,
-    FIREBASE_PROJECT_ID: !!process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  });
-
   try {
     const ip = getClientIp(request);
     const limitRes = rateLimit(ip, 60, 60000);
@@ -199,9 +191,9 @@ export async function POST(request: Request): Promise<Response> {
       });
     }
   } catch (error: unknown) {
-    console.error("[ops/alerts/generate] Unhandled error:", (error as Error).message);
+    console.error("[ops/alerts/generate] Unhandled error:", error);
     return NextResponse.json(
-      { error: (error as Error).message || "Internal Server Error", code: "SERVER_ERROR" },
+      { error: "Internal server error", code: "SERVER_ERROR" },
       { status: 500 }
     );
   }

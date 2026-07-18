@@ -14,6 +14,12 @@ interface AuthContextProps {
 
 const AuthContext = createContext<AuthContextProps | undefined>(undefined);
 
+/**
+ * Provider component that wraps the application and exposes authentication context.
+ * Provides current user state, loading status, staff privilege, and sign in/out functions.
+ * @param props - Element containing React children nodes.
+ * @returns The context provider wrapper element.
+ */
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -66,6 +72,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
+/**
+ * Custom React hook to consume the current Authentication state.
+ * Throws an error if consumed outside of an AuthProvider tree.
+ * @returns The active auth context state.
+ */
 export function useAuthContext() {
   const context = useContext(AuthContext);
   if (!context) {

@@ -11,11 +11,6 @@ import { getGeminiModel } from "@/lib/gemini";
  * @returns NextResponse containing AI reply and follow-up prompts — always JSON, never HTML.
  */
 export async function POST(request: Request): Promise<Response> {
-  // Diagnostic: log env var presence (never actual values)
-  console.error("[assistant/chat] ENV CHECK:", {
-    GEMINI_API_KEY: !!process.env.GEMINI_API_KEY,
-  });
-
   try {
     const ip = getClientIp(request);
     const limitRes = rateLimit(ip, 60, 60000);
@@ -100,9 +95,9 @@ export async function POST(request: Request): Promise<Response> {
       );
     }
   } catch (error: unknown) {
-    console.error("[assistant/chat] Unhandled error:", (error as Error).message);
+    console.error("[assistant/chat] Unhandled error:", error);
     return NextResponse.json(
-      { error: (error as Error).message || "Internal Server Error", code: "SERVER_ERROR" },
+      { error: "Internal server error", code: "SERVER_ERROR" },
       { status: 500 }
     );
   }

@@ -12,14 +12,6 @@ import { QueryDocumentSnapshot } from "firebase-admin/firestore";
  * @returns NextResponse containing recommended route steps — always JSON, never HTML.
  */
 export async function POST(request: Request): Promise<Response> {
-  // Diagnostic: log env var presence (never actual values)
-  console.error("[navigate/route] ENV CHECK:", {
-    GEMINI_API_KEY: !!process.env.GEMINI_API_KEY,
-    FIREBASE_CLIENT_EMAIL: !!process.env.FIREBASE_CLIENT_EMAIL,
-    FIREBASE_PRIVATE_KEY: !!process.env.FIREBASE_PRIVATE_KEY,
-    FIREBASE_PROJECT_ID: !!process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  });
-
   try {
     const ip = getClientIp(request);
     const limitRes = rateLimit(ip, 60, 60000);
@@ -123,10 +115,10 @@ export async function POST(request: Request): Promise<Response> {
       console.error("Gemini API call failed:", geminiError);
       throw geminiError;
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("NAVIGATE_ROUTE_ERROR:", error);
     return NextResponse.json(
-      { error: error?.message || String(error), stack: error?.stack },
+      { error: "Internal server error", code: "SERVER_ERROR" },
       { status: 500 }
     );
   }

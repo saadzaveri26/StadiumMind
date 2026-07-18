@@ -9,7 +9,7 @@ export interface RouteCardProps {
   onClose?: () => void;
 }
 
-export function RouteCard({ steps, estTime, destinationName, onClose }: RouteCardProps) {
+const RouteCardComponent = ({ steps, estTime, destinationName, onClose }: RouteCardProps) => {
   return (
     <Card className="bg-[#1A1C1E] border border-outline-variant p-4 shadow-2xl relative overflow-hidden pointer-events-auto">
       {/* Decorative vertical line accent */}
@@ -66,4 +66,9 @@ export function RouteCard({ steps, estTime, destinationName, onClose }: RouteCar
       </div>
     </Card>
   );
-}
+};
+
+RouteCardComponent.displayName = "RouteCard";
+
+export const RouteCard = React.memo(RouteCardComponent);
+

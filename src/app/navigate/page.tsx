@@ -2,10 +2,11 @@
 
 import React, { useState } from "react";
 import { useLanguage } from "@/context/LanguageContext";
-import { useZones, Zone } from "@/lib/hooks/useZones";
+import { useZones } from "@/lib/hooks/useZones";
 import { translations } from "@/lib/translations";
 import { ZoneCard } from "@/components/ZoneCard";
 import { RouteCard } from "@/components/RouteCard";
+import { NavigateForm } from "@/components/NavigateForm";
 import { Button } from "@/components/ui/button";
 
 export default function NavigatePage() {
@@ -26,8 +27,7 @@ export default function NavigatePage() {
   const [calculating, setCalculating] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Auto seed telemetry helper
-  const handleSeedTelemetry = async () => {
+  const handleSeedTelemetry = React.useCallback(async () => {
     try {
       const res = await fetch("/api/zones/seed", {
         method: "POST",
@@ -40,9 +40,9 @@ export default function NavigatePage() {
     } catch {
       setErrorMsg("Failed to initialize telemetry");
     }
-  };
+  }, []);
 
-  const handleFindWay = async () => {
+  const handleFindWay = React.useCallback(async () => {
     if (!startZone || !endZone) {
       setErrorMsg("Please select both start and end zones");
       return;
@@ -82,7 +82,28 @@ export default function NavigatePage() {
     } finally {
       setCalculating(false);
     }
-  };
+  }, [startZone, endZone]);
+
+  const handleZoneClick = React.useCallback((zoneId: string) => {
+    setStartZone((prevStart) => {
+      if (!prevStart) {
+        return zoneId;
+      }
+      if (prevStart === zoneId) {
+        setEndZone("");
+        return "";
+      }
+      setEndZone((prevEnd) => {
+        if (!prevEnd && prevStart !== zoneId) {
+          return zoneId;
+        }
+        return "";
+      });
+      return prevStart;
+    });
+  }, []);
+
+  const memoizedZones = React.useMemo(() => zones, [zones]);
 
   return (
     <div className="flex-1 px-container-padding max-w-[1200px] mx-auto w-full flex flex-col pt-8 pb-32">
@@ -97,7 +118,7 @@ export default function NavigatePage() {
           </p>
         </div>
         <div className="flex gap-2">
-          {zones.length === 0 && !loading && (
+          {memoizedZones.length === 0 && !loading && (
             <Button variant="secondary" onClick={handleSeedTelemetry} className="h-touch-target-min">
               Initialize Telemetry
             </Button>
@@ -116,81 +137,28 @@ export default function NavigatePage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-stack-gap mb-grid-gutter">
-          {zones.map((zone) => (
+          {memoizedZones.map((zone) => (
             <ZoneCard
               key={zone.zoneId}
               zone={zone}
-              onClick={() => {
-                if (!startZone) {
-                  setStartZone(zone.zoneId);
-                } else if (startZone && !endZone && startZone !== zone.zoneId) {
-                  setEndZone(zone.zoneId);
-                } else {
-                  setStartZone(zone.zoneId);
-                  setEndZone("");
-                }
-              }}
+              onClick={() => handleZoneClick(zone.zoneId)}
             />
           ))}
         </div>
       )}
 
-      {/* Select Start/End form if not clicked */}
-      <div className="bg-surface-container-low border border-outline-variant/30 rounded-xl p-4 mt-4 space-y-4">
-        <h3 className="font-label-bold text-sm text-on-surface uppercase tracking-wider">
-          Pathfinding Parameters
-        </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="start-zone-select" className="text-xs text-on-surface-variant font-data-mono uppercase">Start Zone</label>
-            <select
-              id="start-zone-select"
-              name="start-zone-select"
-              value={startZone}
-              onChange={(e) => setStartZone(e.target.value)}
-              className="bg-background text-on-surface border border-outline-variant rounded-lg p-2.5 h-touch-target-min text-sm"
-            >
-              <option value="">Select starting location...</option>
-              {zones.map((z) => (
-                <option key={z.zoneId} value={z.zoneId}>
-                  {z.zoneId} — {z.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="end-zone-select" className="text-xs text-on-surface-variant font-data-mono uppercase">End Zone</label>
-            <select
-              id="end-zone-select"
-              name="end-zone-select"
-              value={endZone}
-              onChange={(e) => setEndZone(e.target.value)}
-              className="bg-background text-on-surface border border-outline-variant rounded-lg p-2.5 h-touch-target-min text-sm"
-            >
-              <option value="">Select destination...</option>
-              {zones.map((z) => (
-                <option key={z.zoneId} value={z.zoneId}>
-                  {z.zoneId} — {z.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {errorMsg && (
-          <p className="text-xs text-error font-data-mono tracking-wide">{errorMsg}</p>
-        )}
-
-        <Button
-          variant="default"
-          onClick={handleFindWay}
-          disabled={calculating || zones.length === 0}
-          className="w-full h-[56px] flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(233,195,73,0.2)]"
-        >
-          <span className="material-symbols-outlined">explore</span>
-          {calculating ? "Calculating Route..." : t.findWay}
-        </Button>
-      </div>
+      {/* Select Start/End form component */}
+      <NavigateForm
+        zones={memoizedZones}
+        startZone={startZone}
+        endZone={endZone}
+        setStartZone={setStartZone}
+        setEndZone={setEndZone}
+        onSubmit={handleFindWay}
+        calculating={calculating}
+        errorMsg={errorMsg}
+        translations={t}
+      />
 
       {/* Floating Route Suggestion Card */}
       {routeData && (

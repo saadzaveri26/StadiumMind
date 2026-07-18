@@ -2,14 +2,9 @@ import { useEffect, useState } from "react";
 import { collection, query, onSnapshot, orderBy } from "firebase/firestore";
 import { db } from "../firebase";
 
-export interface Zone {
-  zoneId: string;
-  name: string;
-  gate: string;
-  occupancyPercent: number;
-  capacity: number;
-  status: "NOMINAL" | "WARNING" | "CRITICAL";
-}
+import { Zone } from "../zoneData";
+
+export type { Zone };
 
 /**
  * React hook that establishes a real-time Firestore listener for stadium zones.

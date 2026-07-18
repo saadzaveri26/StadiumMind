@@ -10,13 +10,6 @@ import { QueryDocumentSnapshot } from "firebase-admin/firestore";
  * @returns NextResponse with aggregated data — always JSON, never HTML.
  */
 export async function GET(request: Request): Promise<Response> {
-  // Diagnostic: log env var presence (never actual values)
-  console.error("[zones/summary] ENV CHECK:", {
-    FIREBASE_CLIENT_EMAIL: !!process.env.FIREBASE_CLIENT_EMAIL,
-    FIREBASE_PRIVATE_KEY: !!process.env.FIREBASE_PRIVATE_KEY,
-    FIREBASE_PROJECT_ID: !!process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  });
-
   try {
     const ip = getClientIp(request);
     const limitRes = rateLimit(ip, 60, 60000);
@@ -78,10 +71,10 @@ export async function GET(request: Request): Promise<Response> {
       criticalCount,
       zoneCount,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("ZONES_SUMMARY_ERROR:", error);
     return NextResponse.json(
-      { error: error?.message || String(error), stack: error?.stack },
+      { error: "Internal server error", code: "SERVER_ERROR" },
       { status: 500 }
     );
   }

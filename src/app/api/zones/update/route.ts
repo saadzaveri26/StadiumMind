@@ -11,13 +11,6 @@ import { getZoneStatus } from "@/lib/zoneData";
  * @returns NextResponse with updated status or error response — always JSON, never HTML.
  */
 export async function POST(request: Request): Promise<Response> {
-  // Diagnostic: log env var presence (never actual values)
-  console.error("[zones/update] ENV CHECK:", {
-    FIREBASE_CLIENT_EMAIL: !!process.env.FIREBASE_CLIENT_EMAIL,
-    FIREBASE_PRIVATE_KEY: !!process.env.FIREBASE_PRIVATE_KEY,
-    FIREBASE_PROJECT_ID: !!process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  });
-
   try {
     const ip = getClientIp(request);
 
@@ -77,9 +70,9 @@ export async function POST(request: Request): Promise<Response> {
 
     return NextResponse.json({ success: true, zoneId, occupancyPercent, status });
   } catch (error: unknown) {
-    console.error("[zones/update] Unhandled error:", (error as Error).message);
+    console.error("[zones/update] Unhandled error:", error);
     return NextResponse.json(
-      { error: (error as Error).message || "Internal Server Error", code: "SERVER_ERROR" },
+      { error: "Internal server error", code: "SERVER_ERROR" },
       { status: 500 }
     );
   }
