@@ -26,19 +26,19 @@ export async function POST(request: Request): Promise<Response> {
       );
     }
 
-    if (!process.env.GEMINI_API_KEY) {
-      return NextResponse.json(
-        { error: "AI service temporarily unavailable", code: "SERVICE_UNAVAILABLE" },
-        { status: 503 }
-      );
-    }
-
     const body = await request.json();
     const parsed = assistantChatSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json(
         { error: "Invalid request payload", code: "VALIDATION_ERROR" },
         { status: 400 }
+      );
+    }
+
+    if (!process.env.GEMINI_API_KEY) {
+      return NextResponse.json(
+        { error: "AI service temporarily unavailable", code: "SERVICE_UNAVAILABLE" },
+        { status: 503 }
       );
     }
 

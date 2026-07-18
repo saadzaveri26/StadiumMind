@@ -9,15 +9,21 @@ const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
 const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
 const rawKey = process.env.FIREBASE_PRIVATE_KEY || "";
 
-/**
- * Handles FIREBASE_PRIVATE_KEY in all deployment formats:
- * - Real newlines (pasted as-is into Vercel dashboard)
- * - Escaped \\n (pasted as a single-line string, or from .env files)
- * - Wrapped in quotes (some env var managers add surrounding quotes)
- */
-const privateKey = rawKey.includes("\\n")
-  ? rawKey.replace(/\\n/g, "\n")
-  : rawKey;
+const cleanPrivateKey = (key: string): string => {
+  let cleaned = key.trim();
+  if (cleaned.startsWith('"') && cleaned.endsWith('"')) {
+    cleaned = cleaned.slice(1, -1);
+  }
+  if (cleaned.startsWith("'") && cleaned.endsWith("'")) {
+    cleaned = cleaned.slice(1, -1);
+  }
+  if (cleaned.includes("\\n")) {
+    cleaned = cleaned.replace(/\\n/g, "\n");
+  }
+  return cleaned;
+};
+
+const privateKey = cleanPrivateKey(rawKey);
 
 const hasCredentials = !!(projectId && clientEmail && privateKey);
 // Strict rule: Zero console.log except one credential-presence check in firebase-admin.ts (log true/false only)
