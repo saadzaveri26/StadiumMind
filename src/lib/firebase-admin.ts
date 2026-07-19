@@ -1,6 +1,3 @@
-import { getApps, initializeApp, cert } from "firebase-admin/app";
-import { getFirestore } from "firebase-admin/firestore";
-import { getAuth } from "firebase-admin/auth";
 import type { App } from "firebase-admin/app";
 import type { Firestore } from "firebase-admin/firestore";
 import type { Auth } from "firebase-admin/auth";
@@ -29,12 +26,18 @@ const hasCredentials = !!(projectId && clientEmail && privateKey);
 // Strict rule: Zero console.log except one credential-presence check in firebase-admin.ts (log true/false only)
 console.log("Firebase Admin credentials present:", hasCredentials);
 
+let adminAppInstance: App | null = null;
+
 /**
  * Initializes the Firebase Admin SDK app if not already initialized.
  * Throws a descriptive error if credentials are missing (caught by route handlers).
+ * Uses dynamic import to prevent startup module evaluation crashes on Vercel.
  * @returns The initialized App instance.
  */
-export function getFirebaseAdminApp(): App {
+export async function getFirebaseAdminApp(): Promise<App> {
+  if (adminAppInstance) return adminAppInstance;
+
+  const { getApps, initializeApp, cert } = await import("firebase-admin/app");
   const apps = getApps();
   if (apps.length === 0) {
     if (!hasCredentials) {
@@ -44,31 +47,37 @@ export function getFirebaseAdminApp(): App {
       );
     }
 
-    return initializeApp({
+    adminAppInstance = initializeApp({
       credential: cert({
         projectId,
         clientEmail,
         privateKey,
       }),
     });
+  } else {
+    adminAppInstance = apps[0]!;
   }
-  return apps[0]!;
+  return adminAppInstance;
 }
 
 /**
  * Returns the Firebase Admin Firestore instance.
+ * Uses dynamic import to prevent startup module evaluation crashes on Vercel.
  * @returns The Admin Firestore database.
  */
-export function getAdminDb(): Firestore {
-  const app = getFirebaseAdminApp();
+export async function getAdminDb(): Promise<Firestore> {
+  const app = await getFirebaseAdminApp();
+  const { getFirestore } = await import("firebase-admin/firestore");
   return getFirestore(app);
 }
 
 /**
  * Returns the Firebase Admin Auth instance.
+ * Uses dynamic import to prevent startup module evaluation crashes on Vercel.
  * @returns The Admin Auth instance.
  */
-export function getAdminAuth(): Auth {
-  const app = getFirebaseAdminApp();
+export async function getAdminAuth(): Promise<Auth> {
+  const app = await getFirebaseAdminApp();
+  const { getAuth } = await import("firebase-admin/auth");
   return getAuth(app);
 }

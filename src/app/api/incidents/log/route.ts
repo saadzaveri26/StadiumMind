@@ -32,11 +32,11 @@ export async function POST(request: Request): Promise<Response> {
 
     const token = authHeader.split("Bearer ")[1];
 
-    let authAdmin: ReturnType<typeof getAdminAuth>;
+    let authAdmin: Awaited<ReturnType<typeof getAdminAuth>>;
     try {
-      authAdmin = getAdminAuth();
+      authAdmin = await getAdminAuth();
     } catch (initError: unknown) {
-      console.error("[incidents/log] Firebase Admin init failed:", (initError as Error).message);
+      console.error("[incidents/log] Firebase Admin init failed:", initError);
       return NextResponse.json(
         { error: "Authentication service temporarily unavailable", code: "SERVICE_UNAVAILABLE" },
         { status: 503 }
@@ -73,11 +73,11 @@ export async function POST(request: Request): Promise<Response> {
     const cleanZone = sanitizeTextInput(zoneId, 50);
     const cleanDesc = sanitizeTextInput(description, 2000);
 
-    let db: ReturnType<typeof getAdminDb>;
+    let db: Awaited<ReturnType<typeof getAdminDb>>;
     try {
-      db = getAdminDb();
+      db = await getAdminDb();
     } catch (initError: unknown) {
-      console.error("[incidents/log] Firebase Admin DB init failed:", (initError as Error).message);
+      console.error("[incidents/log] Firebase Admin DB init failed:", initError);
       return NextResponse.json(
         { error: "Database service temporarily unavailable", code: "SERVICE_UNAVAILABLE" },
         { status: 503 }

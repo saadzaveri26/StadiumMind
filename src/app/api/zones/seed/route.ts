@@ -39,11 +39,11 @@ export async function POST(request: Request): Promise<Response> {
       );
     }
 
-    let db: ReturnType<typeof getAdminDb>;
+    let db: Awaited<ReturnType<typeof getAdminDb>>;
     try {
-      db = getAdminDb();
+      db = await getAdminDb();
     } catch (initError: unknown) {
-      console.error("[zones/seed] Firebase Admin init failed:", (initError as Error).message);
+      console.error("[zones/seed] Firebase Admin init failed:", initError);
       return NextResponse.json(
         { error: "Database service temporarily unavailable", code: "SERVICE_UNAVAILABLE" },
         { status: 503 }

@@ -20,9 +20,9 @@ export async function GET(request: Request): Promise<Response> {
       );
     }
 
-    let db: ReturnType<typeof getAdminDb>;
+    let db: Awaited<ReturnType<typeof getAdminDb>>;
     try {
-      db = getAdminDb();
+      db = await getAdminDb();
     } catch (initError: unknown) {
       console.error("Firebase Admin init failed:", initError);
       throw initError;

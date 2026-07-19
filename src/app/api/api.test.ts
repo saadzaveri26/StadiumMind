@@ -22,10 +22,10 @@ jest.mock("@/lib/firebase-admin", () => {
     limit: jest.fn().mockReturnThis(),
   };
   return {
-    getAdminDb: jest.fn().mockReturnValue({
+    getAdminDb: jest.fn().mockResolvedValue({
       collection: jest.fn().mockReturnValue(mockCollection),
     }),
-    getAdminAuth: jest.fn().mockReturnValue({
+    getAdminAuth: jest.fn().mockResolvedValue({
       verifyIdToken: jest.fn().mockImplementation((token) => {
         if (token === "valid-staff-token") {
           return Promise.resolve({ staff: true, uid: "staff-1" });
