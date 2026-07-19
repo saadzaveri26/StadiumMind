@@ -71,10 +71,10 @@ export async function GET(request: Request): Promise<Response> {
       criticalCount,
       zoneCount,
     });
-  } catch (error: unknown) {
+  } catch (error: any) {
     console.error("ZONES_SUMMARY_ERROR:", error);
     return NextResponse.json(
-      { error: "Internal server error", code: "SERVER_ERROR" },
+      { error: error?.message || String(error), stack: error?.stack, code: "SERVER_ERROR" },
       { status: 500 }
     );
   }

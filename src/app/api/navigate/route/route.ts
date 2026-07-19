@@ -115,10 +115,10 @@ export async function POST(request: Request): Promise<Response> {
       console.error("Gemini API call failed:", geminiError);
       throw geminiError;
     }
-  } catch (error: unknown) {
+  } catch (error: any) {
     console.error("NAVIGATE_ROUTE_ERROR:", error);
     return NextResponse.json(
-      { error: "Internal server error", code: "SERVER_ERROR" },
+      { error: error?.message || String(error), stack: error?.stack, code: "SERVER_ERROR" },
       { status: 500 }
     );
   }
