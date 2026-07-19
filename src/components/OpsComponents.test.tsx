@@ -61,6 +61,19 @@ describe("OpsAlertFeed Component", () => {
     expect(screen.getByText(/Z-104/)).toBeInTheDocument();
     expect(screen.getByText("Abnormal density detected")).toBeInTheDocument();
   });
+
+  test("renders last updated timestamp when provided", () => {
+    const alerts = [
+      {
+        severity: "LOW" as const,
+        title: "Minor Alert",
+        message: "Details",
+        timestamp: "5M AGO",
+      },
+    ];
+    render(<OpsAlertFeed alerts={alerts} translations={mockTranslations} lastUpdated="10:45 PM" />);
+    expect(screen.getByText("Last updated: 10:45 PM")).toBeInTheDocument();
+  });
 });
 
 describe("OpsIncidentForm Component", () => {

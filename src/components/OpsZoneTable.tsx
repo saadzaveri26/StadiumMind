@@ -12,6 +12,13 @@ export interface OpsZoneTableProps {
   };
 }
 
+/** Module-level constant: status-to-CSS-class mapping. Avoids per-row object allocation. */
+const STATUS_COLOR_MAP: Record<string, string> = {
+  NOMINAL: "text-primary bg-primary-container/20 border-primary/30",
+  WARNING: "text-tertiary bg-tertiary/10 border-tertiary/30",
+  CRITICAL: "text-error bg-error/10 border-error/30 animate-pulse",
+} as const;
+
 const OpsZoneTableComponent = ({
   zones,
   loading,
@@ -43,13 +50,7 @@ const OpsZoneTableComponent = ({
             </thead>
             <tbody className="font-body-md text-sm">
               {zones.map((zone) => {
-                const colorClass = {
-                  primary: "text-primary bg-primary-container/20 border-primary/30",
-                  tertiary: "text-tertiary bg-tertiary/10 border-tertiary/30",
-                  error: "text-error bg-error/10 border-error/30 animate-pulse",
-                }[
-                  zone.status === "NOMINAL" ? "primary" : zone.status === "WARNING" ? "tertiary" : "error"
-                ] || "";
+                const colorClass = STATUS_COLOR_MAP[zone.status] || "";
 
                 return (
                   <tr key={zone.zoneId} className="border-b border-outline-variant/30 hover:bg-surface-container-low transition-colors">

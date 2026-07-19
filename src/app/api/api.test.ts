@@ -1,5 +1,6 @@
 /** @jest-environment node */
 
+import { GET as zonesSummaryGET } from "./zones/summary/route";
 import { POST as updateZonePOST } from "./zones/update/route";
 import { POST as navigateRoutePOST } from "./navigate/route/route";
 import { POST as assistantChatPOST } from "./assistant/chat/route";
@@ -15,6 +16,7 @@ jest.mock("@/lib/firebase-admin", () => {
   };
   const mockCollection = {
     doc: jest.fn().mockReturnValue(mockDoc),
+    select: jest.fn().mockReturnThis(),
     get: jest.fn().mockResolvedValue([
       { id: "Z-104", data: () => ({ name: "Zone 1", gate: "Gate A", occupancyPercent: 40, status: "NOMINAL" }) }
     ]),
@@ -61,6 +63,22 @@ jest.mock("@/lib/gemini", () => ({
 }));
 
 describe("API Route Handlers", () => {
+  // Test zones summary and cache-control headers
+  test("GET /api/zones/summary returns aggregated data and cache control headers", async () => {
+    const req = new Request("http://localhost/api/zones/summary", {
+      method: "GET",
+      headers: {
+        "x-forwarded-for": "10.0.0.1",
+      },
+    });
+    const res = await zonesSummaryGET(req);
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.averageOccupancy).toBe(40);
+    expect(json.zoneCount).toBe(1);
+    expect(res.headers.get("Cache-Control")).toBe("s-maxage=10, stale-while-revalidate=30");
+  });
+
   // Test zone updating validation
   test("POST /api/zones/update returns 400 on invalid payload", async () => {
     const req = new Request("http://localhost/api/zones/update", {

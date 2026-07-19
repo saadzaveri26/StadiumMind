@@ -103,8 +103,6 @@ export default function NavigatePage() {
     });
   }, []);
 
-  const memoizedZones = React.useMemo(() => zones, [zones]);
-
   return (
     <div className="flex-1 px-container-padding max-w-[1200px] mx-auto w-full flex flex-col pt-8 pb-32">
       {/* Header section */}
@@ -118,7 +116,7 @@ export default function NavigatePage() {
           </p>
         </div>
         <div className="flex gap-2">
-          {memoizedZones.length === 0 && !loading && (
+          {zones.length === 0 && !loading && (
             <Button variant="secondary" onClick={handleSeedTelemetry} className="h-touch-target-min">
               Initialize Telemetry
             </Button>
@@ -137,7 +135,7 @@ export default function NavigatePage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-stack-gap mb-grid-gutter">
-          {memoizedZones.map((zone) => (
+          {zones.map((zone) => (
             <ZoneCard
               key={zone.zoneId}
               zone={zone}
@@ -149,7 +147,7 @@ export default function NavigatePage() {
 
       {/* Select Start/End form component */}
       <NavigateForm
-        zones={memoizedZones}
+        zones={zones}
         startZone={startZone}
         endZone={endZone}
         setStartZone={setStartZone}

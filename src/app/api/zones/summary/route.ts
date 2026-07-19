@@ -5,7 +5,8 @@ import { QueryDocumentSnapshot } from "firebase-admin/firestore";
 
 /**
  * Handles GET requests to retrieve aggregated stadium parameters (average occupancy, active incident counts).
- * Enforces rate limiting. Returns zero-value summary if zones collection is empty or credentials are missing.
+ * Uses Firestore field projection for efficiency. Enforces rate limiting.
+ * Returns zero-value summary if zones collection is empty or credentials are missing.
  * @param request - Next.js Request object.
  * @returns NextResponse with aggregated data — always JSON, never HTML.
  */
@@ -25,16 +26,13 @@ export async function GET(request: Request): Promise<Response> {
       db = await getAdminDb();
     } catch (initError: unknown) {
       console.error("Firebase Admin init failed:", initError);
-      throw initError;
+      return NextResponse.json(
+        { error: "Database service temporarily unavailable", code: "SERVICE_UNAVAILABLE" },
+        { status: 503 }
+      );
     }
 
-    let snapshot: Awaited<ReturnType<FirebaseFirestore.CollectionReference["get"]>>;
-    try {
-      snapshot = await db.collection("zones").get();
-    } catch (queryError: unknown) {
-      console.error("Firestore query failed:", queryError);
-      throw queryError;
-    }
+    const snapshot = await db.collection("zones").select("occupancyPercent", "status").get();
 
     if (snapshot.empty) {
       return NextResponse.json({
@@ -65,16 +63,24 @@ export async function GET(request: Request): Promise<Response> {
 
     const averageOccupancy = zoneCount > 0 ? Math.round(totalOccupancy / zoneCount) : 0;
 
-    return NextResponse.json({
-      averageOccupancy,
-      warningCount,
-      criticalCount,
-      zoneCount,
-    });
-  } catch (error: any) {
+    return NextResponse.json(
+      {
+        averageOccupancy,
+        warningCount,
+        criticalCount,
+        zoneCount,
+      },
+      {
+        headers: {
+          "Cache-Control": "s-maxage=10, stale-while-revalidate=30",
+        },
+      }
+    );
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
     console.error("ZONES_SUMMARY_ERROR:", error);
     return NextResponse.json(
-      { error: error?.message || String(error), stack: error?.stack, code: "SERVER_ERROR" },
+      { error: message, code: "SERVER_ERROR" },
       { status: 500 }
     );
   }

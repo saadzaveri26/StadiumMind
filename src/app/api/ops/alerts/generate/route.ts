@@ -4,9 +4,37 @@ import { getAdminAuth, getAdminDb } from "@/lib/firebase-admin";
 import { getGeminiModel } from "@/lib/gemini";
 import { QueryDocumentSnapshot } from "firebase-admin/firestore";
 
+/** Minimal zone shape for AI analysis prompt. */
+interface SimpleZone {
+  zoneId: string;
+  name: string;
+  gate: string;
+  occupancyPercent: number;
+  status: string;
+}
+
+/** Minimal incident shape for AI analysis prompt. */
+interface SimpleIncident {
+  id: string;
+  zoneId: string;
+  description: string;
+  severity: string;
+  reportedAt: string;
+  resolvedAt: string | null;
+}
+
+/** Shape of a generated operational alert. */
+interface GeneratedAlert {
+  severity: "HIGH" | "MEDIUM" | "LOW";
+  title: string;
+  message: string;
+  zoneId?: string;
+}
+
 /**
  * Handles POST requests to generate operational alerts using Gemini 2.5 Flash.
  * Verifies the caller's Firebase ID token and custom 'staff' claim.
+ * Parallelizes Firestore queries with field projections for efficiency.
  * Enforces rate limiting.
  * @param request - Next.js Request object.
  * @returns NextResponse containing list of alerts or unauthorized error — always JSON, never HTML.
@@ -47,7 +75,6 @@ export async function POST(request: Request): Promise<Response> {
     try {
       const decodedToken = await authAdmin.verifyIdToken(token!);
 
-      // Verify staff claim
       if (!decodedToken.staff) {
         return NextResponse.json(
           { error: "Forbidden: Staff credentials required", code: "FORBIDDEN" },
@@ -79,14 +106,13 @@ export async function POST(request: Request): Promise<Response> {
       );
     }
 
-    const zonesSnap = await db.collection("zones").get();
-    interface SimpleZone {
-      zoneId: string;
-      name: string;
-      gate: string;
-      occupancyPercent: number;
-      status: string;
-    }
+    // Parallel Firestore queries with field projections for efficiency
+    const [zonesSnap, incidentsSnap] = await Promise.all([
+      db.collection("zones").select("name", "gate", "occupancyPercent", "status").get(),
+      db.collection("incidents").orderBy("reportedAt", "desc").limit(20)
+        .select("zoneId", "description", "severity", "reportedAt", "resolvedAt").get(),
+    ]);
+
     const zonesData: SimpleZone[] = [];
     zonesSnap.forEach((doc: QueryDocumentSnapshot) => {
       const data = doc.data();
@@ -99,21 +125,6 @@ export async function POST(request: Request): Promise<Response> {
       });
     });
 
-    // Fetch incidents (limit to last 20)
-    const incidentsSnap = await db
-      .collection("incidents")
-      .orderBy("reportedAt", "desc")
-      .limit(20)
-      .get();
-
-    interface SimpleIncident {
-      id: string;
-      zoneId: string;
-      description: string;
-      severity: string;
-      reportedAt: string;
-      resolvedAt: string | null;
-    }
     const incidentsData: SimpleIncident[] = [];
     incidentsSnap.forEach((doc: QueryDocumentSnapshot) => {
       const data = doc.data();
@@ -127,7 +138,6 @@ export async function POST(request: Request): Promise<Response> {
       });
     });
 
-    // Gemini call — wrapped in its own try/catch
     try {
       const model = getGeminiModel();
       const prompt = `You are a professional tournament venue intelligence operator.
@@ -152,20 +162,13 @@ export async function POST(request: Request): Promise<Response> {
       const result = await model.generateContent(prompt);
       const text = result.response.text();
 
-      interface GeneratedAlert {
-        severity: "HIGH" | "MEDIUM" | "LOW";
-        title: string;
-        message: string;
-        zoneId?: string;
-      }
       let alerts: GeneratedAlert[] = [];
       try {
         const match = text.match(/\[[\s\S]*\]/);
         if (match) {
-          alerts = JSON.parse(match[0]);
+          alerts = JSON.parse(match[0]) as GeneratedAlert[];
         }
       } catch {
-        // Fallback alerts if Gemini returns malformed output
         alerts = [
           {
             severity: "MEDIUM",
@@ -178,7 +181,8 @@ export async function POST(request: Request): Promise<Response> {
 
       return NextResponse.json({ alerts });
     } catch (geminiError: unknown) {
-      console.error("[ops/alerts/generate] Gemini API call failed:", (geminiError as Error).message);
+      const geminiMessage = geminiError instanceof Error ? geminiError.message : String(geminiError);
+      console.error("[ops/alerts/generate] Gemini API call failed:", geminiMessage);
       return NextResponse.json({
         alerts: [
           {

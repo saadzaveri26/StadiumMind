@@ -5,9 +5,18 @@ import { getAdminDb } from "@/lib/firebase-admin";
 import { getGeminiModel } from "@/lib/gemini";
 import { QueryDocumentSnapshot } from "firebase-admin/firestore";
 
+/** Minimal zone shape used for AI navigation prompt. */
+interface SimpleZone {
+  zoneId: string;
+  name: string;
+  gate: string;
+  occupancyPercent: number;
+  status: string;
+}
+
 /**
  * Handles POST requests to generate a low-congestion navigation route using Gemini 2.5 Flash.
- * Enforces rate limiting and input validation.
+ * Uses Firestore field projection for efficiency. Enforces rate limiting and input validation.
  * @param request - Next.js Request object.
  * @returns NextResponse containing recommended route steps — always JSON, never HTML.
  */
@@ -42,44 +51,36 @@ export async function POST(request: Request): Promise<Response> {
     const cleanStart = sanitizeTextInput(startZoneId, 50);
     const cleanEnd = sanitizeTextInput(endZoneId, 50);
 
-    // Firestore query — wrapped in its own try/catch
     let db: Awaited<ReturnType<typeof getAdminDb>>;
     try {
       db = await getAdminDb();
     } catch (initError: unknown) {
       console.error("Firebase Admin init failed:", initError);
-      throw initError;
+      return NextResponse.json(
+        { error: "Database service temporarily unavailable", code: "SERVICE_UNAVAILABLE" },
+        { status: 503 }
+      );
     }
 
-    interface SimpleZone {
-      zoneId: string;
-      name: string;
-      gate: string;
-      occupancyPercent: number;
-      status: string;
-    }
-    let zonesData: SimpleZone[] = [];
-    try {
-      const zonesSnap = await db.collection("zones").get();
-      zonesSnap.forEach((doc: QueryDocumentSnapshot) => {
-        const data = doc.data();
-        zonesData.push({
-          zoneId: doc.id,
-          name: data.name || "",
-          gate: data.gate || "",
-          occupancyPercent: data.occupancyPercent || 0,
-          status: data.status || "NOMINAL",
-        });
+    const zonesData: SimpleZone[] = [];
+    const zonesSnap = await db
+      .collection("zones")
+      .select("name", "gate", "occupancyPercent", "status")
+      .get();
+
+    zonesSnap.forEach((doc: QueryDocumentSnapshot) => {
+      const data = doc.data();
+      zonesData.push({
+        zoneId: doc.id,
+        name: data.name || "",
+        gate: data.gate || "",
+        occupancyPercent: data.occupancyPercent || 0,
+        status: data.status || "NOMINAL",
       });
-    } catch (queryError: unknown) {
-      console.error("Firestore query failed:", queryError);
-      throw queryError;
-    }
+    });
 
-    // Gemini API call — wrapped in its own try/catch
-    try {
-      const model = getGeminiModel();
-      const prompt = `Based on the following real-time zone occupancy levels in the stadium, suggest a step-by-step route from ${cleanStart} to ${cleanEnd} that avoids congested areas (status CRITICAL/WARNING, occupancy > 60%).
+    const model = getGeminiModel();
+    const prompt = `Based on the following real-time zone occupancy levels in the stadium, suggest a step-by-step route from ${cleanStart} to ${cleanEnd} that avoids congested areas (status CRITICAL/WARNING, occupancy > 60%).
     
     Zones data:
     ${JSON.stringify(zonesData)}
@@ -91,34 +92,31 @@ export async function POST(request: Request): Promise<Response> {
       "destinationName": "Destination Zone Name"
     }`;
 
-      const result = await model.generateContent(prompt);
-      const responseText = result.response.text();
+    const result = await model.generateContent(prompt);
+    const responseText = result.response.text();
 
-      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        console.error("[navigate/route] Gemini returned non-JSON response");
-        return NextResponse.json({
-          steps: [`Proceed from ${cleanStart} to ${cleanEnd} via the main concourse.`],
-          estTime: "5 mins",
-          destinationName: cleanEnd,
-        });
-      }
-
-      const parsedRoute = JSON.parse(jsonMatch[0]);
-
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      console.error("[navigate/route] Gemini returned non-JSON response");
       return NextResponse.json({
-        steps: parsedRoute.steps || [`Proceed from ${cleanStart} to ${cleanEnd} via the main concourse.`],
-        estTime: parsedRoute.estTime || "5 mins",
-        destinationName: parsedRoute.destinationName || cleanEnd,
+        steps: [`Proceed from ${cleanStart} to ${cleanEnd} via the main concourse.`],
+        estTime: "5 mins",
+        destinationName: cleanEnd,
       });
-    } catch (geminiError: unknown) {
-      console.error("Gemini API call failed:", geminiError);
-      throw geminiError;
     }
-  } catch (error: any) {
+
+    const parsedRoute = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
+
+    return NextResponse.json({
+      steps: (parsedRoute.steps as string[]) || [`Proceed from ${cleanStart} to ${cleanEnd} via the main concourse.`],
+      estTime: (parsedRoute.estTime as string) || "5 mins",
+      destinationName: (parsedRoute.destinationName as string) || cleanEnd,
+    });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
     console.error("NAVIGATE_ROUTE_ERROR:", error);
     return NextResponse.json(
-      { error: error?.message || String(error), stack: error?.stack, code: "SERVER_ERROR" },
+      { error: message, code: "SERVER_ERROR" },
       { status: 500 }
     );
   }
