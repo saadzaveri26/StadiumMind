@@ -64,10 +64,10 @@ export async function POST(request: Request): Promise<Response> {
     let authAdmin: Awaited<ReturnType<typeof getAdminAuth>>;
     try {
       authAdmin = await getAdminAuth();
-    } catch (initError: any) {
+    } catch (initError: unknown) {
       console.error("[ops/alerts/generate] Firebase Admin init failed:", initError);
       return NextResponse.json(
-        { error: initError?.message || String(initError), stack: initError?.stack, code: "SERVICE_UNAVAILABLE" },
+        { error: "Authentication service temporarily unavailable", code: "SERVICE_UNAVAILABLE" },
         { status: 503 }
       );
     }
