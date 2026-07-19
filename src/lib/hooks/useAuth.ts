@@ -20,18 +20,23 @@ export function useAuth() {
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(async (currentUser) => {
-      setUser(currentUser);
-      if (currentUser) {
-        try {
-          const idTokenResult = await currentUser.getIdTokenResult();
-          setIsStaff(!!idTokenResult.claims.staff);
-        } catch {
+      try {
+        setUser(currentUser);
+        if (currentUser) {
+          try {
+            const idTokenResult = await currentUser.getIdTokenResult();
+            setIsStaff(!!idTokenResult.claims.staff);
+          } catch {
+            setIsStaff(false);
+          }
+        } else {
           setIsStaff(false);
         }
-      } else {
-        setIsStaff(false);
+      } catch (error) {
+        console.error("Auth hook state change error:", error);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     });
 
     return () => unsubscribe();

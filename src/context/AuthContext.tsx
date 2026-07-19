@@ -27,18 +27,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(async (currentUser) => {
-      setUser(currentUser);
-      if (currentUser) {
-        try {
-          const tokenResult = await getIdTokenResult(currentUser, true);
-          setIsStaff(!!tokenResult.claims.staff);
-        } catch {
+      try {
+        setUser(currentUser);
+        if (currentUser) {
+          try {
+            const tokenResult = await getIdTokenResult(currentUser, true);
+            setIsStaff(!!tokenResult.claims.staff);
+          } catch {
+            setIsStaff(false);
+          }
+        } else {
           setIsStaff(false);
         }
-      } else {
-        setIsStaff(false);
+      } catch (error) {
+        console.error("Auth context state change error:", error);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     });
 
     return () => unsubscribe();

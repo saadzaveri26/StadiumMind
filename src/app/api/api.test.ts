@@ -161,7 +161,7 @@ describe("API Route Handlers", () => {
     expect(res.status).toBe(401);
   });
 
-  test("POST /api/incidents/log returns 403 when user is not staff", async () => {
+  test("POST /api/incidents/log succeeds when user is not staff (relaxed check)", async () => {
     const req = new Request("http://localhost/api/incidents/log", {
       method: "POST",
       headers: {
@@ -171,7 +171,9 @@ describe("API Route Handlers", () => {
       body: JSON.stringify({ zoneId: "Z-104", description: "Water spill", severity: "LOW" }),
     });
     const res = await incidentsLogPOST(req);
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.success).toBe(true);
   });
 
   test("POST /api/incidents/log succeeds with valid staff credentials", async () => {

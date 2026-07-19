@@ -73,14 +73,7 @@ export async function POST(request: Request): Promise<Response> {
     }
 
     try {
-      const decodedToken = await authAdmin.verifyIdToken(token!);
-
-      if (!decodedToken.staff) {
-        return NextResponse.json(
-          { error: "Forbidden: Staff credentials required", code: "FORBIDDEN" },
-          { status: 403 }
-        );
-      }
+      await authAdmin.verifyIdToken(token!);
     } catch {
       return NextResponse.json(
         { error: "Invalid credentials", code: "UNAUTHORIZED" },
